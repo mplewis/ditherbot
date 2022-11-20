@@ -39,13 +39,28 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
   const rawBody = JSON.parse(event.body)
   const body = z.object({ image_url: z.string() }).parse(rawBody)
 
-  const img = await jimp.read(body.image_url)
-  const width = img.getWidth()
-  const height = img.getHeight()
-  const newWidth = 48 // px
-  const newHeight = Math.round((newWidth / width) * height)
+  const img = await process(body.image_url, 48, 32)
+  console.log({ bytes: img.bitmap.data.length })
+
+  const buf = await img.getBufferAsync(jimp.MIME_PNG)
+  return {
+    statusCode: 200,
+    headers: { 'Content-Type': 'image/png' },
+    body: buf,
+  }
+}
+
+async function process(
+  src: string,
+  width: number,
+  colors: number
+): Promise<jimp> {
+  const img = await jimp.read(src)
+  const w = img.getWidth()
+  const h = img.getHeight()
+  const newWidth = width
+  const newHeight = Math.round((newWidth / w) * h)
   img.resize(newWidth, newHeight)
-  //
   const ipc = iq.utils.PointContainer.fromUint8Array(
     img.bitmap.data,
     newWidth,
@@ -55,21 +70,8 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
     new iq.distance.EuclideanBT709(),
     iq.image.ErrorDiffusionArrayKernel.Stucki
   )
-  // B&W palette
-  // const palette = new iq.utils.Palette()
-  // palette.add(iq.utils.Point.createByRGBA(0, 0, 0, 255))
-  // palette.add(iq.utils.Point.createByRGBA(255, 255, 255, 255))
-  const palette = iq.buildPaletteSync([ipc], { colors: 8 })
+  const palette = iq.buildPaletteSync([ipc], { colors })
   const opc = imageQuantizer.quantizeSync(ipc, palette)
   img.bitmap.data = Buffer.from(opc.toUint8Array())
-
-  console.log({ bytes: img.bitmap.data.length })
-
-  const buf = await img.getBufferAsync(jimp.MIME_PNG)
-
-  return {
-    statusCode: 200,
-    headers: { 'Content-Type': 'image/png' },
-    body: buf,
-  }
+  return img
 }
