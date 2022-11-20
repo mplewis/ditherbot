@@ -204,16 +204,13 @@ async function binarySearch<T>(args: {
   let best: T | undefined
   let stepSize: number | undefined
   while (Date.now() - startTime < timeoutMs) {
-    const { output, result } = await task(curr)
-    console.log({ curr, result })
-
     if (stepSize && seen.has(curr)) break
-    seen.add(curr)
+    const { output, result } = await task(curr)
+    if (stepSize) seen.add(curr)
 
     if (result === 'Correct') return output
     if (result === 'TooHigh') {
       if (!stepSize) {
-        console.log('Found max bound!')
         stepSize = Math.ceil(curr / 4)
       } else {
         stepSize = Math.ceil(stepSize / 2)
