@@ -6,6 +6,7 @@
     "target": "esnext",
     "module": "NodeNext",
     "moduleResolution": "node",
+    "strictNullChecks": true,
     "baseUrl": "./",
     "rootDirs": [
       "./src",

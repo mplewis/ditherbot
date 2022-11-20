@@ -6,6 +6,12 @@ import { z } from 'zod'
 
 import { logger } from 'src/lib/logger'
 
+const SECOND = 1000
+const KB = 1024
+const cohostMaxPostBytes = 200 * KB
+const initialWidth = 64 // px
+const searchTimeout = 5 * SECOND
+
 type RLEImage = {
   rows: RLERun[][]
 }
@@ -37,37 +43,61 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
   logger.info('Invoked ditherer function')
   console.log({ event, context })
   const contentType = event.headers['content-type']
-  if (!contentType.toLowerCase().startsWith('application/json')) {
-    return {
-      statusCode: 415,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        error: `unsupported Content-Type: expected application/json, got ${contentType}`,
-      }),
-    }
+  if (!contentType?.toLowerCase().startsWith('application/json')) {
+    return restError(415, 'unsupported content type')
   }
+  if (!event.body) return restError(400, 'missing request body')
 
+  const schema = z.object({
+    image_url: z.string(),
+    colors: z.number().min(0).max(128).default(16),
+    pixel_size: z.number().min(1).max(32).default(8),
+    max_size: z
+      .number()
+      .min(1 * KB)
+      .max(cohostMaxPostBytes)
+      .default(cohostMaxPostBytes),
+  })
   const rawBody = JSON.parse(event.body)
-  const body = z.object({ image_url: z.string() }).parse(rawBody)
+  const body = schema.parse(rawBody)
+  console.log({ body })
 
-  const img = await process(body.image_url, 64, 32)
-  const pixels = img.bitmap.data.length / 4
+  const out = await binarySearch({
+    start: initialWidth,
+    timeoutMs: searchTimeout,
+    task: async (width) => {
+      const img = await process(body.image_url, width, body.colors)
+      const rleImg = await toRuns(img)
+      const html = toHTML(rleImg, body.pixel_size)
 
-  const rleImg = await toRuns(img)
-  let totalRuns = 0
-  for (const row of rleImg.rows) totalRuns += row.length
+      let result: BinarySearchCheckResult = 'Correct'
+      if (html.length > body.max_size) result = 'TooHigh'
+      else if (html.length < body.max_size) result = 'TooLow'
 
-  const html = toHTML(rleImg, 8)
+      return { result, output: { img, html } }
+    },
+  })
+  if (!out) return restError(500, 'failed to dither image')
+  const { img, html } = out
+
+  const pixels = img.bitmap.width * img.bitmap.height
   console.log({
     pixels,
-    totalRuns,
-    ratio: totalRuns / pixels,
     chars: html.length,
+    charsPerPixel: html.length / pixels,
   })
   return {
     statusCode: 200,
     headers: { 'Content-Type': 'application/html' },
     body: html,
+  }
+}
+
+function restError(status: number, msg: string) {
+  return {
+    statusCode: status,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ error: msg }),
   }
 }
 
@@ -146,4 +176,41 @@ function toHTML(img: RLEImage, pxSize: number): string {
     removeAttributeQuotes: true,
     minifyCSS: true,
   })
+}
+
+type BinarySearchCheckResult = 'TooLow' | 'TooHigh' | 'Correct'
+
+async function binarySearch<T>(args: {
+  timeoutMs: number | undefined
+  start: number
+  task: (n: number) => Promise<{ output: T; result: BinarySearchCheckResult }>
+}): Promise<T | undefined> {
+  const { start, task } = args
+  const timeoutMs = args.timeoutMs || 1000
+  const startTime = Date.now()
+  let curr = Math.round(start)
+  let stepSize = Math.ceil(curr / 2)
+
+  const seen = new Set<number>()
+
+  let best: T | undefined
+  console.log('starting')
+  while (Date.now() - startTime < timeoutMs) {
+    if (seen.has(curr)) break
+    seen.add(curr)
+
+    const { output, result } = await task(curr)
+    console.log({ n: curr, result })
+
+    if (result === 'Correct') return output
+    if (result === 'TooLow') {
+      best = output
+      curr += stepSize
+    } else {
+      curr -= stepSize
+    }
+
+    stepSize = Math.ceil(stepSize / 2)
+  }
+  return best
 }
