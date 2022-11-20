@@ -1,5 +1,7 @@
 import type { APIGatewayEvent, Context } from 'aws-lambda'
 import fetch from 'cross-fetch'
+import * as iq from 'image-q'
+import { PNG } from 'pngjs'
 import { z } from 'zod'
 
 import { logger } from 'src/lib/logger'
@@ -38,13 +40,28 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
   const body = z.object({ image_url: z.string() }).parse(rawBody)
   const resp = await fetch(body.image_url)
   console.log({ resp })
+
   const blob = await resp.blob()
   const buffer = await blob.arrayBuffer()
   console.log(`read bytes: ${buffer.byteLength}`)
 
+  const { data, width, height } = PNG.sync.read(Buffer.from(buffer))
+  const ipc = iq.utils.PointContainer.fromUint8Array(data, width, height)
+
+  // TODO: processing...
+  // const pal = iq.buildPaletteSync([ipc])
+  // const opc = iq.applyPaletteSync(ipc, pal)
+  const obuf = ipc.toUint8Array()
+
+  const opngObj = new PNG()
+  opngObj.data = Buffer.from(obuf)
+  opngObj.width = width
+  opngObj.height = height
+  const opng = PNG.sync.write(opngObj)
+
   return {
     statusCode: 200,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ bytes: buffer.byteLength }),
+    headers: { 'Content-Type': 'image/png' },
+    body: opng,
   }
 }

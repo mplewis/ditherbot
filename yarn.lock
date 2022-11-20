@@ -6224,6 +6224,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/pngjs@npm:^6.0.0":
+  version: 6.0.1
+  resolution: "@types/pngjs@npm:6.0.1"
+  dependencies:
+    "@types/node": "*"
+  checksum: ac73884609bd5991e00e88c6e36e8edcd22ad2cb3602a79feb8f7567877706b275349b69335ee8557ed8ef7209e9b8af7bc97e2932a11b906d34d2972788a834
+  languageName: node
+  linkType: hard
+
 "@types/prettier@npm:^2.1.5":
   version: 2.7.1
   resolution: "@types/prettier@npm:2.7.1"
@@ -18929,6 +18938,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"pngjs@npm:^6.0.0":
+  version: 6.0.0
+  resolution: "pngjs@npm:6.0.0"
+  checksum: ac23ea329b1881d1a10575aff58116dc27b894ec3f5b84ba15c7f527d21e609fbce7ba16d48f8ccb86c7ce45ceed622472765476ab2875949d4bec55e153f87a
+  languageName: node
+  linkType: hard
+
 "pnp-webpack-plugin@npm:1.6.4":
   version: 1.6.4
   resolution: "pnp-webpack-plugin@npm:1.6.4"
@@ -20795,9 +20811,11 @@ __metadata:
   resolution: "root-workspace-0b6124@workspace:."
   dependencies:
     "@redwoodjs/core": 3.4.0
+    "@types/pngjs": ^6.0.0
     cross-fetch: ^3.1.5
     get-pixels: ^3.3.3
     image-q: ^4.0.0
+    pngjs: ^6.0.0
     zod: ^3.19.1
   languageName: unknown
   linkType: soft
