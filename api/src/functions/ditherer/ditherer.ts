@@ -48,13 +48,17 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
   const { data, width, height } = PNG.sync.read(Buffer.from(buffer))
   const ipc = iq.utils.PointContainer.fromUint8Array(data, width, height)
 
-  // TODO: processing...
-  // const pal = iq.buildPaletteSync([ipc])
-  // const opc = iq.applyPaletteSync(ipc, pal)
-  const obuf = ipc.toUint8Array()
+  const imageQuantizer = new iq.image.ErrorDiffusionArray(
+    new iq.distance.EuclideanBT709(),
+    iq.image.ErrorDiffusionArrayKernel.Jarvis
+  )
+  const palette = new iq.utils.Palette()
+  palette.add(iq.utils.Point.createByRGBA(0, 0, 0, 255))
+  palette.add(iq.utils.Point.createByRGBA(255, 255, 255, 255))
 
+  const opc = imageQuantizer.quantizeSync(ipc, palette)
   const opngObj = new PNG()
-  opngObj.data = Buffer.from(obuf)
+  opngObj.data = Buffer.from(opc.toUint8Array())
   opngObj.width = width
   opngObj.height = height
   const opng = PNG.sync.write(opngObj)
