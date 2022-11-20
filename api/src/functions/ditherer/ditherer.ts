@@ -1,10 +1,21 @@
 import type { APIGatewayEvent, Context } from 'aws-lambda'
-import fetch from 'cross-fetch'
+import { minify } from 'html-minifier'
 import * as iq from 'image-q'
 import jimp from 'jimp'
 import { z } from 'zod'
 
 import { logger } from 'src/lib/logger'
+
+type RLEImage = {
+  rows: RLERun[][]
+}
+
+type RLERun = {
+  r: number
+  g: number
+  b: number
+  count: number
+}
 
 /**
  * The handler function is your code that processes http request events.
@@ -39,14 +50,24 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
   const rawBody = JSON.parse(event.body)
   const body = z.object({ image_url: z.string() }).parse(rawBody)
 
-  const img = await process(body.image_url, 48, 32)
-  console.log({ bytes: img.bitmap.data.length })
+  const img = await process(body.image_url, 64, 32)
+  const pixels = img.bitmap.data.length / 4
 
-  const buf = await img.getBufferAsync(jimp.MIME_PNG)
+  const rleImg = await toRuns(img)
+  let totalRuns = 0
+  for (const row of rleImg.rows) totalRuns += row.length
+
+  const html = toHTML(rleImg, 8)
+  console.log({
+    pixels,
+    totalRuns,
+    ratio: totalRuns / pixels,
+    chars: html.length,
+  })
   return {
     statusCode: 200,
-    headers: { 'Content-Type': 'image/png' },
-    body: buf,
+    headers: { 'Content-Type': 'application/html' },
+    body: html,
   }
 }
 
@@ -74,4 +95,55 @@ async function process(
   const opc = imageQuantizer.quantizeSync(ipc, palette)
   img.bitmap.data = Buffer.from(opc.toUint8Array())
   return img
+}
+
+async function toRuns(img: jimp): Promise<RLEImage> {
+  const { data, width, height } = img.bitmap
+  const rows: RLERun[][] = []
+  for (let y = 0; y < height; y++) {
+    const row: RLERun[] = []
+    let run: RLERun | null = null
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4
+      const r = data[i]
+      const g = data[i + 1]
+      const b = data[i + 2]
+      if (run && run.r === r && run.g === g && run.b === b) {
+        run.count++
+      } else {
+        run = { r, g, b, count: 1 }
+        row.push(run)
+      }
+    }
+    rows.push(row)
+  }
+  return { rows }
+}
+
+function uint8ToHex(n: number): string {
+  return n.toString(16).padStart(2, '0')
+}
+
+function colorToHex(color: { r: number; g: number; b: number }): string {
+  return `#${uint8ToHex(color.r)}${uint8ToHex(color.g)}${uint8ToHex(color.b)}`
+}
+
+function toHTML(img: RLEImage, pxSize: number): string {
+  function runToSpan(run: RLERun): string {
+    return `<span style="display: inline-block; background: ${colorToHex(
+      run
+    )}; height: ${pxSize}px; width: ${pxSize * run.count}px"></span>`
+  }
+  function runsToDiv(runs: RLERun[]): string {
+    return `<div style="height: ${pxSize}px">${runs
+      .map(runToSpan)
+      .join('')}</div>`
+  }
+  const bigHTML = img.rows.map(runsToDiv).join('')
+  return minify(bigHTML, {
+    collapseWhitespace: true,
+    removeComments: true,
+    removeAttributeQuotes: true,
+    minifyCSS: true,
+  })
 }
