@@ -62,11 +62,12 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
   const body = schema.parse(rawBody)
   console.log({ body })
 
+  const original = await jimp.read(body.image_url)
   const out = await binarySearch({
     start: initialWidth,
     timeoutMs: searchTimeout,
     task: async (width) => {
-      const img = await process(body.image_url, width, body.colors)
+      const img = await process(original.clone(), width, body.colors)
       const rleImg = await toRuns(img)
       const html = toHTML(rleImg, body.pixel_size)
 
@@ -102,11 +103,10 @@ function restError(status: number, msg: string) {
 }
 
 async function process(
-  src: string,
+  img: jimp,
   width: number,
   colors: number
 ): Promise<jimp> {
-  const img = await jimp.read(src)
   const w = img.getWidth()
   const h = img.getHeight()
   const newWidth = width
@@ -121,10 +121,20 @@ async function process(
     new iq.distance.EuclideanBT709(),
     iq.image.ErrorDiffusionArrayKernel.Stucki
   )
-  const palette = iq.buildPaletteSync([ipc], { colors })
-  const opc = imageQuantizer.quantizeSync(ipc, palette)
+  const opc = imageQuantizer.quantizeSync(ipc, palette(ipc, colors))
   img.bitmap.data = Buffer.from(opc.toUint8Array())
   return img
+}
+
+function palette(ipc: iq.utils.PointContainer, colors: number) {
+  if (colors === 0) return iq.buildPaletteSync([ipc])
+  if (colors === 1) {
+    const p = new iq.utils.Palette()
+    p.add(iq.utils.Point.createByRGBA(0, 0, 0, 255))
+    p.add(iq.utils.Point.createByRGBA(255, 255, 255, 255))
+    return p
+  }
+  return iq.buildPaletteSync([ipc], { colors })
 }
 
 async function toRuns(img: jimp): Promise<RLEImage> {
@@ -189,28 +199,36 @@ async function binarySearch<T>(args: {
   const timeoutMs = args.timeoutMs || 1000
   const startTime = Date.now()
   let curr = Math.round(start)
-  let stepSize = Math.ceil(curr / 2)
-
-  const seen = new Set<number>()
+  const seen: Set<number> = new Set()
 
   let best: T | undefined
-  console.log('starting')
+  let stepSize: number | undefined
   while (Date.now() - startTime < timeoutMs) {
-    if (seen.has(curr)) break
+    const { output, result } = await task(curr)
+    console.log({ curr, result })
+
+    if (stepSize && seen.has(curr)) break
     seen.add(curr)
 
-    const { output, result } = await task(curr)
-    console.log({ n: curr, result })
-
     if (result === 'Correct') return output
-    if (result === 'TooLow') {
-      best = output
-      curr += stepSize
-    } else {
+    if (result === 'TooHigh') {
+      if (!stepSize) {
+        console.log('Found max bound!')
+        stepSize = Math.ceil(curr / 4)
+      } else {
+        stepSize = Math.ceil(stepSize / 2)
+      }
       curr -= stepSize
     }
-
-    stepSize = Math.ceil(stepSize / 2)
+    if (result === 'TooLow') {
+      best = output
+      if (!stepSize) {
+        curr *= 2
+      } else {
+        curr += stepSize
+        stepSize = Math.ceil(stepSize / 2)
+      }
+    }
   }
   return best
 }
