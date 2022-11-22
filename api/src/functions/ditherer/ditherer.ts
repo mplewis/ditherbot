@@ -207,11 +207,12 @@ async function binarySearch<T>(args: {
     if (stepSize && seen.has(curr)) break
     const { output, result } = await task(curr)
     if (stepSize) seen.add(curr)
+    // console.log({ curr, stepSize, result })
 
     if (result === 'Correct') return output
     if (result === 'TooHigh') {
       if (!stepSize) {
-        stepSize = Math.ceil(curr / 4)
+        stepSize = Math.ceil(curr / 2)
       } else {
         stepSize = Math.ceil(stepSize / 2)
       }
@@ -222,8 +223,8 @@ async function binarySearch<T>(args: {
       if (!stepSize) {
         curr *= 2
       } else {
-        curr += stepSize
         stepSize = Math.ceil(stepSize / 2)
+        curr += stepSize
       }
     }
   }
