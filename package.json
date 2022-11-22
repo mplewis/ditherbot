@@ -10,7 +10,8 @@
   "devDependencies": {
     "@redwoodjs/core": "3.4.0",
     "@types/html-minifier": "^4.0.2",
-    "@types/pngjs": "^6.0.0"
+    "@types/pngjs": "^6.0.0",
+    "prettier-plugin-tailwindcss": "^0.1.13"
   },
   "eslintConfig": {
     "extends": "@redwoodjs/eslint-config",
