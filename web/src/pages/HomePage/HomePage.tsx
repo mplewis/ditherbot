@@ -59,18 +59,33 @@ export const CohostPreview = ({ children }) => {
   )
 }
 
+type RequestState =
+  | { state: 'idle' }
+  | { state: 'loading' }
+  | { state: 'error'; msg: string }
+  | { state: 'success'; html: string }
+
 const HomePage = () => {
-  const [outHTML, setOutHTML] = useState('')
+  const [state, setState] = useState({ state: 'idle' } as RequestState)
 
   async function sendDemoRequest() {
+    const args = {
+      image_url: 'http://127.0.0.1:8000/daftpunk.png',
+      pixel_size: 2,
+      colors: 16,
+    }
+    setState({ state: 'loading' })
     const resp = await fetch('/.redwood/functions/dither', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_url: 'http://127.0.0.1:8000/daftpunk.png' }),
+      body: JSON.stringify(args),
     })
-    console.log({ resp })
+    if (resp.status !== 200) {
+      setState({ state: 'error', msg: await resp.text() })
+      return
+    }
     const html = await resp.text()
-    setOutHTML(html)
+    setState({ state: 'success', html })
   }
 
   return (
@@ -79,16 +94,21 @@ const HomePage = () => {
 
       <h1>Ditherbot</h1>
       <p>Convert an image into cohost-friendly pixel art</p>
-      <button
-        className="rounded-full bg-slate-200 px-3 py-1"
-        onClick={sendDemoRequest}
-      >
-        Send demo request
-      </button>
-
-      <pre>
-        <code dangerouslySetInnerHTML={{ __html: outHTML }} />
-      </pre>
+      {state.state !== 'loading' && (
+        <button
+          className="rounded-full bg-slate-200 px-3 py-1"
+          onClick={sendDemoRequest}
+        >
+          Send demo request
+        </button>
+      )}
+      {state.state === 'loading' && <Loading />}
+      {state.state === 'error' && <ErrorView msg={state.msg} />}
+      {state.state === 'success' && (
+        <CohostPreview>
+          <div dangerouslySetInnerHTML={{ __html: state.html }} />
+        </CohostPreview>
+      )}
     </>
   )
 }
